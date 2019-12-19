@@ -71,10 +71,14 @@ public class PrincipalICA
          * a alpha , y el error que vamos a aceptar para determinar si el proceso 
          * concluyo de forma exitosa
          */
-        double [][] W = fi.ICA( 1 , 0.000000001 );
+        double [][] W = fi.ICA( 1 , 0.000001 );
         
         
-        
+        /**
+         * Por ultimo generamos la matriz S. Todos los datos generados y utilizados
+         * para la ejecucion del metodo, se encuentran dentro de la clase, y se pueden
+         * revisar con los getters implementados
+         */
         fi.generateUnMixed();
         
         double [][]S = fi.getS();
@@ -82,7 +86,7 @@ public class PrincipalICA
         
 
         new Graficos("Matriz S Inicial  ", fi.generateTraspuesta(Sinit) , new Color(148 , 139, 61 ) );   
-        new Graficos("Matriz X Mezclada ",fi.generateTraspuesta(  fi.getX()) , new Color(218 , 124, 48 )  );
+        //new Graficos("Matriz X Mezclada ",fi.generateTraspuesta(  fi.getX()) , new Color(218 , 124, 48 )  );
         new Graficos("Resultado final ", fi.getStrans() , new Color(57 , 106, 177 )  );   
     }
 }

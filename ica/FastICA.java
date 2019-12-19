@@ -31,6 +31,7 @@ public class FastICA
     //   Fila : Observacion del microfono X
     //   Columna : Observacion en el tiempo a 
     private double [][] X ; 
+    private double [][] Xt ; 
     
     private double [][] Xcenter ; 
     
@@ -63,13 +64,23 @@ public class FastICA
         W = new double [ X[0].length] [ X[0].length];
         
         Winv = new double [ X[0].length] [ X[0].length];
+        
+        Xt = new double [X[0].length][X.length];
+        for (int x=0; x < X.length; x++) 
+        {
+            for (int y=0; y < X[x].length; y++) 
+            { 
+                Xt[y][x] = X[x][y];
+            }
+        }
     }
     
     
     /**
      * Metodo que realiza el centrado de los datos.
      * 
-     * 
+     * Simplemente este metodo calcula el promedio por cada fila y posteriormente
+     * lo va restando a cada fila de nuestra matriz.
      */
     public void centrado()
     {
@@ -135,6 +146,11 @@ public class FastICA
     /**
      * Metodo que realiza el blanqueo de una matriz.
      * 
+     * El proceso de blanqueo esta dado por la busqueda de un V calculado de la
+     * siguiente manera
+     * 
+     *    V = E x D^(- 0.5) x Et
+     * 
      * 
      */
     
@@ -143,23 +159,46 @@ public class FastICA
         int mues = X[0].length;
         covarianza();
        
-        
+       
+        // COn la matriz de covarianza obtenemos los valores singulares  de la matriz
         RealMatrix rm = new Array2DRowRealMatrix( cov );
-        //Realizamos la descomposicion de valores singulares
+        /** 
+         *  Realizamos la descomposicion de valores singulares
+         * 
+         * La descomposicion en valores singulares nos genera 3 matrices donde 
+         * 
+         *               A = U x S x Vt 
+         * Y ademas
+         * 
+         *  Ut x U = I
+         *  Vt x V = I 
+         * 
+         */ 
+        
         SingularValueDecomposition svd = new SingularValueDecomposition( rm );
-        RealMatrix Srm = svd.getS();
         RealMatrix Urm = svd.getU();
+        RealMatrix Srm = svd.getS();
         RealMatrix Vrm = svd.getV();
         
+        
+        /** 
+         * Supongamos que A es una matriz cuadrada. 
+         * Un eigenvalues (valor propio) de A es un número r que cuando se 
+         * resta de cada una de las entradas diagonales de A, se convierte 
+         * A en una matriz singular. Restar un escalar r de cada entrada 
+         * diagonal de A es lo mismo que restar r veces la matriz de identificación I de A.
+         */
         
         double [][] eigenvalues = new double [ mues ][ mues ];
         for( int i =0; i<3 ; i++)
         {
-            eigenvalues[i][i] = 1.0 / Math.sqrt(  Srm.getEntry(i, i)) ;
+            eigenvalues[i][i] = 1.0 / Math.sqrt(  Srm.getEntry(i, i) ) ;
         }
+        
+        
+        // Obtenemos los datos de U y calculamos la traspuesta de U 
         double [][] Umt = Urm.getData();
         double [][] Umtt = new double [Umt.length][Umt[0].length ];
-        //Calculamos la matriz de blanqueo
         for (int x=0; x < Umt.length; x++) 
         {
             for (int y=0; y < Umt[x].length; y++) 
@@ -168,22 +207,16 @@ public class FastICA
             }
         }
         
-        double [][]  f1 = multiplyMatrices( eigenvalues , Umtt );
         
+        // Calculamos  E x D^(- 0.5) x Et    la matriz D el calculo interior esta en eigenvalues 
+        double [][]  f1 = multiplyMatrices( eigenvalues , Umtt );
         double [][] whiteM = multiplyMatrices( Umt , f1  );
 
         
         
-        double [][] XT = new double [X[0].length][X.length];
-        for (int x=0; x < X.length; x++) 
-        {
-            for (int y=0; y < X[x].length; y++) 
-            { 
-                XT[y][x] = X[x][y];
-            }
-        }
-        //Xwhite = multiplyMatrices(whiteM, XT);
-        Xwhite = dotMatrices(whiteM, XT);
+        // Por ultimo multiplicamos nuestra matriz de blanqueo con la matriz de datos X para 
+        // obtener nuestra matriz blanqueada
+        Xwhite = dotMatrices(whiteM, Xt);
         
         XwhiteTras = new double [ Xwhite[0].length][ Xwhite.length];
         for( int i = 0 ; i < Xwhite[0].length ; i++)
@@ -247,10 +280,10 @@ public class FastICA
             
             // Ejecutamos el ciclo por 10mil veces o hasta que alcancemos un error bajo
             
-            while(( iter < 10000) && ( err > 0.000001) )
+            while(( iter < 10000) && ( err > lim) )
             {
                 //producto punto entre la matriz w traspuesta y la señal blanqueada
-                double [] ws = dotMatrizVector( w , Xwhite );
+                
                 
                 // Multiplicar ws por alpha y de ahi tangente hiperbolica con la transpuesta por cada elemento
                 // de la matriz
@@ -259,6 +292,12 @@ public class FastICA
                 double[] wg_ =  new double [ nroMst ] ;
                 
                 double wg_Prom = 0;
+                
+                // Segun FastICA obtenemos 
+                //  w <- E{ z * g( wt * z ) } - E{ g'(wt * z)} * w 
+                //
+                // Nuestro g es tanh 
+                double [] ws = dotMatrizVector( w , Xwhite ); // Xwhite = z 
                 for( int i = 0 ; i < nroMst ; i++ )
                 {
                     wg[i] = Math.tanh( ws[i] * alpha ); 
@@ -268,15 +307,15 @@ public class FastICA
                 }
                 wg_Prom = wg_Prom / nroMst;
                 // 
-                //wNew = (signals * wg.T).mean(axis=1) - wg_.mean() * w.squeeze()
                 
                 // Se multiplica cada elemento del vector wg y la matriz de señales 
+                // Esto es para calcular w / || w ||
                 double [] temp = new double [nroSig];
                 for( int i = 0 ; i < nroSig ; i ++ )
                 {
                     for( int j = 0 ; j < nroMst ; j ++ )
                     {
-                        temp[ i ] += wg[ j ] * Xwhite[ i][j];
+                        temp[ i ] += wg[ j ] * Xwhite[ i ][ j ];
                     }
                     temp[ i ] = temp[ i ] / nroMst ; 
                     
@@ -320,6 +359,7 @@ public class FastICA
                 {
                     result += wNew[i] * w[i];
                 }
+                
                 err = Math.abs ( Math.abs( result ) - 1 );
                     
                 
@@ -328,6 +368,8 @@ public class FastICA
                 for( int i = 0 ; i < nroSig ; i ++ )
                     w[i] = wNew[i];
                 iter++;
+                
+                
             }//fin de while de iteraciones para encontrar w
             System.out.println( "Fila generada : " + fila + "    Nro de iteraciones : " + iter  );
             iter = 0 ; 
